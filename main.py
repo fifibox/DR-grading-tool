@@ -85,7 +85,7 @@ class DRGrader(tk.Tk):
         tk.Button(topbar, text="Open Folder", command=self._open_folder,
                   **btn).pack(side="left", padx=6)
         
-        tk.Button(topbar, text="Open CSV", command=self._open_csv,
+        tk.Button(topbar, text="Open Excel", command=self._open_csv,
                   **btn).pack(side="left", padx=16)
 
         tk.Label(topbar, text="Grader initial:", font=("Helvetica", 13),
@@ -96,7 +96,7 @@ class DRGrader(tk.Tk):
         self.grader_entry.pack(side="left", padx=(0, 16))
         self.grader_entry.bind("<FocusOut>", lambda e: self._on_grader_changed())
 
-        tk.Button(topbar, text="Save CSV", command=self._save_csv,
+        tk.Button(topbar, text="Save to Excel", command=self._save_csv,
                   **btn).pack(side="right", padx=16)
 
         self.progress_label = tk.Label(topbar, text="0 / 0  graded",
