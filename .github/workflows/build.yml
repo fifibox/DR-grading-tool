@@ -33,7 +33,7 @@ jobs:
         pyinstaller --onefile --windowed --name "DR-Grader" main.py
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: DR-Grader-windows
         path: dist/DR-Grader.exe
@@ -71,7 +71,8 @@ jobs:
 
     - name: Build app with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name "DR-Grader" main.py
+        rm -rf dist build *.spec
+        pyinstaller --onedir --windowed --name "DR-Grader" main.py
 
     - name: Create DMG (optional)
       run: |
@@ -80,14 +81,14 @@ jobs:
         hdiutil create -volname "DR-Grader" -srcfolder dist/dmg -ov -format UDZO dist/DR-Grader.dmg
 
     - name: Upload macOS artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: DR-Grader-macos
         path: dist/DR-Grader.app
         retention-days: 2
 
     - name: Upload DMG artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: DR-Grader-macos-dmg
         path: dist/DR-Grader.dmg
