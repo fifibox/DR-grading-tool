@@ -828,25 +828,44 @@ class DRGrader(tk.Tk):
     # ------------------------------------------------------------------ #
     def _save_csv(self):
         if self.use_csv_mode and self.csv_path:
-            self._save_csv_to_original()
+            self._save_csv_as_copy()
         else:
             self._save_csv_new()
 
-    def _save_csv_to_original(self):
+    def _save_csv_as_copy(self):
         if not self.csv_path or not self.csv_data:
             messagebox.showinfo("Nothing to Save", "No file loaded or no data to save.")
             return
 
+        # Generate default filename with _graded suffix
+        base_path = Path(self.csv_path)
+        default_name = f"{base_path.stem}_graded{base_path.suffix}"
+        default_dir = str(base_path.parent)
+
+        # Fallback to home directory if original directory doesn't exist
+        if not os.path.exists(default_dir):
+            default_dir = str(Path.home())
+
+        save_path = filedialog.asksaveasfilename(
+            initialdir=default_dir,
+            defaultextension=base_path.suffix,
+            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv")],
+            initialfile=default_name,
+            title="Save Grading Results As"
+        )
+        if not save_path:
+            return
+
         try:
-            if self.csv_path.endswith('.xlsx'):
-                self._save_xlsx(self.csv_path)
+            if save_path.endswith('.xlsx'):
+                self._save_xlsx(save_path)
             else:
-                self._save_csv_format(self.csv_path)
+                self._save_csv_format(save_path)
         except Exception as ex:
             messagebox.showerror("Save Error", str(ex))
 
     def _save_xlsx(self, xlsx_path):
-        wb = load_workbook(xlsx_path)
+        wb = Workbook()
         ws = wb.active
 
         ws.cell(row=1, column=1).value = "filename"
