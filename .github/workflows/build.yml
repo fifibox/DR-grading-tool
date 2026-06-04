@@ -1,0 +1,106 @@
+name: Build Executables
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.12']
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build executable with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name "DR-Grader" main.py
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: DR-Grader-windows
+        path: dist/DR-Grader.exe
+        retention-days: 2
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/DR-Grader.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.12']
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build app with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name "DR-Grader" main.py
+
+    - name: Create DMG (optional)
+      run: |
+        mkdir -p dist/dmg
+        cp -r dist/DR-Grader.app dist/dmg/
+        hdiutil create -volname "DR-Grader" -srcfolder dist/dmg -ov -format UDZO dist/DR-Grader.dmg
+
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: DR-Grader-macos
+        path: dist/DR-Grader.app
+        retention-days: 2
+
+    - name: Upload DMG artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: DR-Grader-macos-dmg
+        path: dist/DR-Grader.dmg
+        retention-days: 2
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/DR-Grader.dmg
+          dist/DR-Grader.app
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
