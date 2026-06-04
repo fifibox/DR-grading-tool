@@ -10,10 +10,10 @@ from openpyxl import Workbook, load_workbook
 DR_GRADES = [
     {"label": "-1", "name": "Ungradable", "color": "#030304", "desc": "Unable to grade"},
     {"label": "0", "name": "No DR",        "color": "#1a7f37", "desc": "No apparent diabetic retinopathy"},
-    {"label": "1", "name": "Mild",          "color": "#e09c14", "desc": "Microaneurysms only"},
-    {"label": "2", "name": "Moderate",      "color": "#d95c09", "desc": "More than just microaneurysms but less than severe"},
-    {"label": "3", "name": "Severe",        "color": "#cf222e", "desc": "20+ hemorrhages, venous beading, or IRMA"},
-    {"label": "4", "name": "Proliferative", "color": "#8250df", "desc": "Neovascularisation or vitreous/pre-retinal hemorrhage"},
+    {"label": "1", "name": "Mild NPDR",          "color": "#e09c14", "desc": "Microaneurysms only"},
+    {"label": "2", "name": "Moderate NPDR",      "color": "#d95c09", "desc": "More than just microaneurysms but less than severe"},
+    {"label": "3", "name": "Severe NPDR",        "color": "#cf222e", "desc": "20+ hemorrhages for each quadrant or venous beading in 2+ quadrants or IRMA"},
+    {"label": "4", "name": "Proliferative DR", "color": "#8250df", "desc": "Neovascularisation or vitreous/pre-retinal hemorrhage"},
 ]
 
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
