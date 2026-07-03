@@ -8,12 +8,12 @@ from openpyxl import Workbook, load_workbook
 
 # DR grade definitions
 DR_GRADES = [
-    {"label": "-1", "name": "Ungradable", "color": "#030304", "desc": "Unable to grade"},
-    {"label": "0", "name": "No DR",        "color": "#1a7f37", "desc": "No apparent diabetic retinopathy"},
-    {"label": "1", "name": "Mild NPDR",          "color": "#e09c14", "desc": "Microaneurysms only"},
-    {"label": "2", "name": "Moderate NPDR",      "color": "#d95c09", "desc": "More than just microaneurysms but less than severe"},
-    {"label": "3", "name": "Severe NPDR",        "color": "#cf222e", "desc": "20+ hemorrhages for each quadrant or venous beading in 2+ quadrants or IRMA"},
-    {"label": "4", "name": "Proliferative DR", "color": "#8250df", "desc": "Neovascularisation or vitreous/pre-retinal hemorrhage"},
+    {"label": "-1", "Severity": "Ungradable", "color": "#030304", "desc": "Unable to grade"},
+    {"label": "0", "Severity": "No DR",        "color": "#1a7f37", "desc": "No apparent diabetic retinopathy"},
+    {"label": "1", "Severity": "Mild NPDR",          "color": "#e09c14", "desc": "Microaneurysms only"},
+    {"label": "2", "Severity": "Moderate NPDR",      "color": "#d95c09", "desc": "More than just microaneurysms but less than severe"},
+    {"label": "3", "Severity": "Severe NPDR",        "color": "#cf222e", "desc": "20+ hemorrhages for each quadrant or venous beading in 2+ quadrants or any IRMA"},
+    {"label": "4", "Severity": "Proliferative DR", "color": "#8250df", "desc": "Neovascularisation or vitreous/pre-retinal hemorrhage"},
 ]
 
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
@@ -226,7 +226,7 @@ class DRGrader(tk.Tk):
 
             rb = tk.Radiobutton(
                 btn_frame,
-                text=f"{grade['label']} — {grade['name']}",
+                text=f"{grade['label']} — {grade['Severity']}",
                 variable=self.selected_grade, value=grade["label"],
                 font=("Helvetica", 13, "bold"),
                 bg=BG_SIDE, fg=grade["color"],
@@ -324,6 +324,17 @@ class DRGrader(tk.Tk):
         else:
             self._set_status(f"Folder updated with {len(self.image_files)} images")
 
+    def _match_filename_by_stem(self, csv_filename):
+        """
+        Match a filename from CSV to an actual image file by stem (without extension).
+        Returns the actual filename with extension, or None if not found.
+        """
+        csv_stem = Path(csv_filename).stem.lower()
+        for img_file in self.image_files:
+            if Path(img_file).stem.lower() == csv_stem:
+                return img_file
+        return None
+
     def _open_csv(self):
         xlsx_file = filedialog.askopenfilename(
             title="Select Excel File",
@@ -355,19 +366,26 @@ class DRGrader(tk.Tk):
         for row in rows[1:]:
             if not row or not row[0]:
                 continue
-            filename = str(row[0])
+            csv_filename = str(row[0])
             va = str(row[1]) if len(row) > 1 and row[1] else ""
             grader_initial = str(row[2]) if len(row) > 2 and row[2] else ""
             label = str(row[3]) if len(row) > 3 and row[3] else ""
             note = str(row[4]) if len(row) > 4 and row[4] else ""
 
-            self.csv_data[filename] = {
+            # Match filename by stem if extension doesn't match
+            actual_filename = csv_filename
+            if self.image_files and not any(img == csv_filename for img in self.image_files):
+                matched = self._match_filename_by_stem(csv_filename)
+                if matched:
+                    actual_filename = matched
+
+            self.csv_data[actual_filename] = {
                 "va": va,
                 "grader_initial": grader_initial,
                 "label": label,
                 "note": note
             }
-            xlsx_images.append(filename)
+            xlsx_images.append(actual_filename)
 
         # Read grader initial from excel (use first non-empty value)
         for filename in xlsx_images:
@@ -407,19 +425,35 @@ class DRGrader(tk.Tk):
 
             self.image_files = sorted(self.image_files)
         else:
-            # No folder loaded yet, use images from excel
+            # No folder loaded yet, ask user to select image folder
             if not xlsx_images:
                 messagebox.showwarning("No Images", "No image filenames found in Excel")
                 return
 
-            # Ask user to select image folder
             messagebox.showinfo("Select Folder", "Please select the image folder.")
             image_folder = filedialog.askdirectory(title="Select Image Folder")
             if not image_folder:
                 return
 
             self.image_folder = image_folder
-            self.image_files = xlsx_images
+            self.image_files = sorted([
+                f for f in os.listdir(image_folder)
+                if Path(f).suffix.lower() in SUPPORTED_EXTS
+            ])
+            
+            # Re-match CSV filenames with actual image files by stem
+            matched_csv_data = {}
+            for csv_filename, data in self.csv_data.items():
+                matched = self._match_filename_by_stem(csv_filename)
+                if matched:
+                    matched_csv_data[matched] = data
+                else:
+                    # If no match found, keep using the CSV filename
+                    matched_csv_data[csv_filename] = data
+            
+            self.csv_data = matched_csv_data
+            # Use actual image files from folder, but ensure all CSV entries are included
+            self.image_files = sorted(list(set(self.image_files) | set(self.csv_data.keys())))
 
         self.csv_path = xlsx_file
         self.use_csv_mode = True
@@ -455,19 +489,26 @@ class DRGrader(tk.Tk):
             for row in reader:
                 if not row or not row[0]:
                     continue
-                filename = row[0]
+                csv_filename = row[0]
                 va = row[1] if len(row) > 1 else ""
                 grader_initial = row[2] if len(row) > 2 else ""
                 label = row[3] if len(row) > 3 else ""
                 note = row[4] if len(row) > 4 else ""
 
-                self.csv_data[filename] = {
+                # Match filename by stem if extension doesn't match
+                actual_filename = csv_filename
+                if self.image_files and not any(img == csv_filename for img in self.image_files):
+                    matched = self._match_filename_by_stem(csv_filename)
+                    if matched:
+                        actual_filename = matched
+
+                self.csv_data[actual_filename] = {
                     "va": va,
                     "grader_initial": grader_initial,
                     "label": label,
                     "note": note
                 }
-                csv_images.append(filename)
+                csv_images.append(actual_filename)
 
         # Read grader initial from csv (use first non-empty value)
         for filename in csv_images:
@@ -504,19 +545,35 @@ class DRGrader(tk.Tk):
 
             self.image_files = sorted(self.image_files)
         else:
-            # No folder loaded yet, use images from csv
+            # No folder loaded yet, ask user to select image folder
             if not csv_images:
                 messagebox.showwarning("No Images", "No image filenames found in CSV")
                 return
 
-            # Ask user to select image folder
             messagebox.showinfo("Select Folder", "Please select the image folder.")
             image_folder = filedialog.askdirectory(title="Select Image Folder")
             if not image_folder:
                 return
 
             self.image_folder = image_folder
-            self.image_files = csv_images
+            self.image_files = sorted([
+                f for f in os.listdir(image_folder)
+                if Path(f).suffix.lower() in SUPPORTED_EXTS
+            ])
+            
+            # Re-match CSV filenames with actual image files by stem
+            matched_csv_data = {}
+            for csv_filename, data in self.csv_data.items():
+                matched = self._match_filename_by_stem(csv_filename)
+                if matched:
+                    matched_csv_data[matched] = data
+                else:
+                    # If no match found, keep using the CSV filename
+                    matched_csv_data[csv_filename] = data
+            
+            self.csv_data = matched_csv_data
+            # Use actual image files from folder, but ensure all CSV entries are included
+            self.image_files = sorted(list(set(self.image_files) | set(self.csv_data.keys())))
 
         self.csv_path = csv_file
         self.use_csv_mode = True
@@ -779,7 +836,7 @@ class DRGrader(tk.Tk):
         self._update_progress()
 
         grade_info = next(g for g in DR_GRADES if g["label"] == grade)
-        self._set_status(f"Graded '{filename}' as {grade} – {grade_info['name']}")
+        self._set_status(f"Graded '{filename}' as {grade} – {grade_info['Severity']}")
         self.after(400, self._auto_advance)
 
 
@@ -801,7 +858,7 @@ class DRGrader(tk.Tk):
         if grade:
             grade_info = next(g for g in DR_GRADES if g["label"] == grade)
             self.center_grade_status.config(
-                text=f"Grade {grade}: {grade_info['name']}",
+                text=f"Grade {grade}: {grade_info['Severity']}",
                 fg="#000000"
             )
         else:
@@ -869,23 +926,31 @@ class DRGrader(tk.Tk):
         wb = Workbook()
         ws = wb.active
 
-        ws.cell(row=1, column=1).value = "filename"
-        ws.cell(row=1, column=2).value = "va"
-        ws.cell(row=1, column=3).value = "grader_initial"
-        ws.cell(row=1, column=4).value = "label"
-        ws.cell(row=1, column=5).value = "note"
+        ws.cell(row=1, column=1).value = "Filename"
+        ws.cell(row=1, column=2).value = "VA"
+        ws.cell(row=1, column=3).value = "Grader Initial"
+        ws.cell(row=1, column=4).value = "Diabetic Retinopathy Severity"
+        ws.cell(row=1, column=5).value = "Label"
+        ws.cell(row=1, column=6).value = "Notes"
 
         for row_idx, filename in enumerate(self.image_files, start=2):
             va = self.csv_data.get(filename, {}).get("va", "")
             grader_initial = self.grader_initials.get(filename, "") if filename in self.grades else ""
             label = self.csv_data.get(filename, {}).get("label", "")
+            # Map label to severity from DR_GRADES
+            severity = ""
+            if label:
+                grade_info = next((g for g in DR_GRADES if g["label"] == label), None)
+                if grade_info:
+                    severity = grade_info["Severity"]
             note = self.csv_data.get(filename, {}).get("note", "")
 
             ws.cell(row=row_idx, column=1).value = filename
             ws.cell(row=row_idx, column=2).value = va
             ws.cell(row=row_idx, column=3).value = grader_initial
-            ws.cell(row=row_idx, column=4).value = label
-            ws.cell(row=row_idx, column=5).value = note
+            ws.cell(row=row_idx, column=4).value = severity
+            ws.cell(row=row_idx, column=5).value = label
+            ws.cell(row=row_idx, column=6).value = note
 
         wb.save(xlsx_path)
         count = len([f for f in self.image_files if self.csv_data.get(f, {}).get("label")])
