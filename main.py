@@ -32,7 +32,7 @@ class DRGrader(tk.Tk):
         super().__init__()
         self.title("Diabetic Retinopathy Grader")
         self.configure(bg=BG)
-        self.minsize(1100, 700)
+        self.minsize(1100, 900)
 
         # State
         self.image_folder  = None
@@ -40,15 +40,16 @@ class DRGrader(tk.Tk):
         self.current_index = -1
         self.grades        = {}
         self.grader_initials = {}
+        self.notes         = {}  # Persistent notes storage
         self.current_photo = None
         self.selected_grade = tk.StringVar(value="")
 
-        # CSV state
+        # Load existing Excel state
         self.csv_path      = None
-        self.csv_data      = {}  # {filename: {"va": value, "grader_initial": "", "label": "", "note": ""}}
-        self.use_csv_mode  = False
+        self.csv_data      = {}  # {filename: {"va": value, "grader_initial": "", "label": "", "notes": ""}}
+        self.use_load_existing_excel_mode  = False
         self.grader_initial_var = tk.StringVar(value="")
-        self.note_var = tk.StringVar(value="")
+        self.notes_var = tk.StringVar(value="")
 
         # Image processing state
         self.brightness = 1.0
@@ -245,18 +246,16 @@ class DRGrader(tk.Tk):
 
         tk.Frame(right, bg=BORDER, height=1).pack(fill="x", padx=10, pady=10)
 
-        tk.Label(right, text="Note", font=("Helvetica", 13, "bold"),
+        tk.Label(right, text="Notes", font=("Helvetica", 13, "bold"),
                  fg=FG, bg=BG_SIDE, pady=8).pack()
 
-        self.note_entry = tk.Entry(right, textvariable=self.note_var,
+        self.notes_entry = tk.Entry(right, textvariable=self.notes_var,
                                    font=("Helvetica", 11), width=28)
-        self.note_entry.pack(padx=10, pady=4)
-        self.note_entry.bind("<KeyRelease>", lambda e: self._on_note_changed())
+        self.notes_entry.pack(padx=10, pady=4)
+        self.notes_entry.bind("<KeyRelease>", lambda e: self._on_notes_changed())
 
-        hint = ("Keyboard shortcuts:\n"
+        hint = ("Keyboard & mouse controls:\n"
                 "  ← / →    Previous / Next\n"
-                "  0 – 4    Grade image\n"
-                "  -        Ungradable\n"
                 "  scroll   Zoom in / out\n"
                 "  drag     Pan image")
         tk.Label(right, text=hint, font=("Helvetica", 13),
@@ -275,12 +274,11 @@ class DRGrader(tk.Tk):
     #  Key & mouse bindings                                                #
     # ------------------------------------------------------------------ #
     def _bind_keys(self):
+        # Arrow keys for navigation
         self.bind("<Left>",  lambda e: self._prev_image())
         self.bind("<Right>", lambda e: self._next_image())
-        for i in range(5):
-            self.bind(str(i), lambda e, g=str(i): self._grade_shortcut(g))
-        self.bind("-", lambda e: self._grade_shortcut("-1"))
-
+        
+        # Mouse bindings for zoom/pan
         self.canvas.bind("<MouseWheel>",      self._on_mousewheel)
         self.canvas.bind("<Button-4>",        self._on_scroll_up)
         self.canvas.bind("<Button-5>",        self._on_scroll_down)
@@ -310,7 +308,7 @@ class DRGrader(tk.Tk):
             messagebox.showwarning("No Images", "No supported images found in that folder.")
             return
 
-        if not self.use_csv_mode:
+        if not self.use_load_existing_excel_mode:
             self.grades = {}
             self.grader_initials = {}
             self.file_listbox.delete(0, tk.END)
@@ -370,7 +368,7 @@ class DRGrader(tk.Tk):
             va = str(row[1]) if len(row) > 1 and row[1] else ""
             grader_initial = str(row[2]) if len(row) > 2 and row[2] else ""
             label = str(row[3]) if len(row) > 3 and row[3] else ""
-            note = str(row[4]) if len(row) > 4 and row[4] else ""
+            notes = str(row[4]) if len(row) > 4 and row[4] else ""
 
             # Match filename by stem if extension doesn't match
             actual_filename = csv_filename
@@ -383,7 +381,7 @@ class DRGrader(tk.Tk):
                 "va": va,
                 "grader_initial": grader_initial,
                 "label": label,
-                "note": note
+                "notes": notes
             }
             xlsx_images.append(actual_filename)
 
@@ -403,7 +401,7 @@ class DRGrader(tk.Tk):
                         "va": "",
                         "grader_initial": self.grader_initial_var.get(),
                         "label": "",
-                        "note": ""
+                        "notes": ""
                     }
                     xlsx_images.append(img)
 
@@ -413,12 +411,12 @@ class DRGrader(tk.Tk):
                     va = self.csv_data[filename]["va"]
                     grader_initial = self.csv_data[filename]["grader_initial"]
                     label = self.csv_data[filename]["label"]
-                    note = self.csv_data[filename]["note"]
+                    notes = self.csv_data[filename]["notes"]
                     ws.cell(row=row_idx, column=1).value = filename
                     ws.cell(row=row_idx, column=2).value = va
                     ws.cell(row=row_idx, column=3).value = grader_initial
                     ws.cell(row=row_idx, column=4).value = label
-                    ws.cell(row=row_idx, column=5).value = note
+                    ws.cell(row=row_idx, column=5).value = notes
 
                 wb.save(xlsx_file)
                 messagebox.showinfo("Excel Updated", f"Added {len(missing_images)} missing image(s) to Excel")
@@ -456,7 +454,7 @@ class DRGrader(tk.Tk):
             self.image_files = sorted(list(set(self.image_files) | set(self.csv_data.keys())))
 
         self.csv_path = xlsx_file
-        self.use_csv_mode = True
+        self.use_load_existing_excel_mode = True
         self.grades = {}
         self.grader_initials = {}
 
@@ -493,7 +491,7 @@ class DRGrader(tk.Tk):
                 va = row[1] if len(row) > 1 else ""
                 grader_initial = row[2] if len(row) > 2 else ""
                 label = row[3] if len(row) > 3 else ""
-                note = row[4] if len(row) > 4 else ""
+                notes = row[4] if len(row) > 4 else ""
 
                 # Match filename by stem if extension doesn't match
                 actual_filename = csv_filename
@@ -506,7 +504,7 @@ class DRGrader(tk.Tk):
                     "va": va,
                     "grader_initial": grader_initial,
                     "label": label,
-                    "note": note
+                    "notes": notes
                 }
                 csv_images.append(actual_filename)
 
@@ -526,20 +524,20 @@ class DRGrader(tk.Tk):
                         "va": "",
                         "grader_initial": self.grader_initial_var.get(),
                         "label": "",
-                        "note": ""
+                        "notes": ""
                     }
                     csv_images.append(img)
 
                 # Save updated csv
                 with open(csv_file, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["filename", "va", "grader_initial", "label", "note"])
+                    writer.writerow(["filename", "va", "grader_initial", "label", "notes"])
                     for filename in csv_images:
                         va = self.csv_data[filename]["va"]
                         grader_initial = self.csv_data[filename]["grader_initial"]
                         label = self.csv_data[filename]["label"]
-                        note = self.csv_data[filename]["note"]
-                        writer.writerow([filename, va, grader_initial, label, note])
+                        notes = self.csv_data[filename]["notes"]
+                        writer.writerow([filename, va, grader_initial, label, notes])
 
                 messagebox.showinfo("CSV Updated", f"Added {len(missing_images)} missing image(s) to CSV")
 
@@ -576,7 +574,7 @@ class DRGrader(tk.Tk):
             self.image_files = sorted(list(set(self.image_files) | set(self.csv_data.keys())))
 
         self.csv_path = csv_file
-        self.use_csv_mode = True
+        self.use_load_existing_excel_mode = True
         self.grades = {}
         self.grader_initials = {}
 
@@ -629,7 +627,7 @@ class DRGrader(tk.Tk):
 
         self.filename_label.config(text=filename)
 
-        if self.use_csv_mode and filename in self.csv_data:
+        if self.use_load_existing_excel_mode and filename in self.csv_data:
             va_text = f"VA: {self.csv_data[filename]['va']}"
         else:
             va_text = "VA: —"
@@ -642,10 +640,11 @@ class DRGrader(tk.Tk):
         self._refresh_grade_ui(saved)
         self._update_center_grade_status(saved)
 
-        if self.use_csv_mode and filename in self.csv_data:
-            self.note_var.set(self.csv_data[filename].get('note', ''))
-        else:
-            self.note_var.set("")
+        # Load note from persistent storage or CSV data
+        notes = self.notes.get(filename, "") or (
+            self.csv_data[filename].get('notes', '') if self.use_load_existing_excel_mode and filename in self.csv_data else ""
+        )
+        self.notes_var.set(notes)
 
         self._update_listbox_colors()
         self._update_progress()
@@ -762,7 +761,7 @@ class DRGrader(tk.Tk):
 
         if self.red_free_filter:
             r, g, b = result.split()
-            result = Image.merge("RGB", (g, g, b))
+            result = Image.merge("RGB", (g, g, g))
 
         if self.brightness != 1.0:
             enhancer = ImageEnhance.Brightness(result)
@@ -826,9 +825,9 @@ class DRGrader(tk.Tk):
         self.grades[filename] = grade
         self.grader_initials[filename] = self.grader_initial_var.get()
 
-        if self.use_csv_mode and filename in self.csv_data:
+        if self.use_load_existing_excel_mode and filename in self.csv_data:
             self.csv_data[filename]["label"] = grade
-            self.csv_data[filename]["note"] = self.note_var.get()
+            self.csv_data[filename]["notes"] = self.notes_var.get()
 
         self._refresh_grade_ui(grade)
         self._update_center_grade_status(grade)
@@ -840,12 +839,15 @@ class DRGrader(tk.Tk):
         self.after(400, self._auto_advance)
 
 
-    def _on_note_changed(self):
-        if self.current_index < 0 or not self.use_csv_mode:
+    def _on_notes_changed(self):
+        if self.current_index < 0:
             return
         filename = self.image_files[self.current_index]
-        if filename in self.csv_data:
-            self.csv_data[filename]["note"] = self.note_var.get()
+        # Always save notes to persistent storage
+        self.notes[filename] = self.notes_var.get()
+        # Also save to csv_data if in load existing excel mode
+        if self.use_load_existing_excel_mode and filename in self.csv_data:
+            self.csv_data[filename]["notes"] = self.notes_var.get()
 
     def _auto_advance(self):
         if self.current_index < len(self.image_files) - 1:
@@ -885,7 +887,7 @@ class DRGrader(tk.Tk):
     #  CSV export                                                          #
     # ------------------------------------------------------------------ #
     def _save_csv(self):
-        if self.use_csv_mode and self.csv_path:
+        if self.use_load_existing_excel_mode and self.csv_path:
             self._save_csv_as_copy()
         else:
             self._save_csv_new()
@@ -943,14 +945,15 @@ class DRGrader(tk.Tk):
                 grade_info = next((g for g in DR_GRADES if g["label"] == label), None)
                 if grade_info:
                     severity = grade_info["Severity"]
-            note = self.csv_data.get(filename, {}).get("note", "")
+            # Get notes from persistent storage, fallback to csv_data
+            notes = self.notes.get(filename, "") or self.csv_data.get(filename, {}).get("notes", "")
 
             ws.cell(row=row_idx, column=1).value = filename
             ws.cell(row=row_idx, column=2).value = va
             ws.cell(row=row_idx, column=3).value = grader_initial
             ws.cell(row=row_idx, column=4).value = severity
             ws.cell(row=row_idx, column=5).value = label
-            ws.cell(row=row_idx, column=6).value = note
+            ws.cell(row=row_idx, column=6).value = notes
 
         wb.save(xlsx_path)
         count = len([f for f in self.image_files if self.csv_data.get(f, {}).get("label")])
@@ -960,13 +963,14 @@ class DRGrader(tk.Tk):
     def _save_csv_format(self, csv_path):
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["filename", "va", "grader_initial", "label", "note"])
+            writer.writerow(["filename", "va", "grader_initial", "label", "notes"])
             for filename in self.image_files:
                 va = self.csv_data.get(filename, {}).get("va", "")
                 grader_initial = self.grader_initials.get(filename, "")
                 label = self.csv_data.get(filename, {}).get("label", "")
-                note = self.csv_data.get(filename, {}).get("note", "")
-                writer.writerow([filename, va, grader_initial, label, note])
+                # Get note from persistent storage, fallback to csv_data
+                notes = self.notes.get(filename, "") or self.csv_data.get(filename, {}).get("notes", "")
+                writer.writerow([filename, va, grader_initial, label, notes])
 
         count = len([f for f in self.image_files if self.csv_data.get(f, {}).get("label")])
         self._set_status(f"Saved {count} grade(s) → {csv_path}")
@@ -994,32 +998,34 @@ class DRGrader(tk.Tk):
                 ws.cell(row=1, column=2).value = "va"
                 ws.cell(row=1, column=3).value = "grader_initial"
                 ws.cell(row=1, column=4).value = "label"
-                ws.cell(row=1, column=5).value = "note"
+                ws.cell(row=1, column=5).value = "notes"
 
                 row_idx = 2
                 for fname in self.image_files:
                     if fname in self.grades:
-                        va = self.csv_data.get(fname, {}).get("va", "") if self.use_csv_mode else ""
+                        va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
                         grader_initial = self.grader_initials.get(fname, "")
-                        note = self.csv_data.get(fname, {}).get("note", "") if self.use_csv_mode else ""
+                        # Get note from persistent storage
+                        notes = self.notes.get(fname, "")
                         ws.cell(row=row_idx, column=1).value = fname
                         ws.cell(row=row_idx, column=2).value = va
                         ws.cell(row=row_idx, column=3).value = grader_initial
                         ws.cell(row=row_idx, column=4).value = self.grades[fname]
-                        ws.cell(row=row_idx, column=5).value = note
+                        ws.cell(row=row_idx, column=5).value = notes
                         row_idx += 1
 
                 wb.save(save_path)
             else:
                 with open(save_path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["filename", "va", "grader_initial", "label", "note"])
+                    writer.writerow(["filename", "va", "grader_initial", "label", "notes"])
                     for fname in self.image_files:
                         if fname in self.grades:
-                            va = self.csv_data.get(fname, {}).get("va", "") if self.use_csv_mode else ""
+                            va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
                             grader_initial = self.grader_initials.get(fname, "")
-                            note = self.csv_data.get(fname, {}).get("note", "") if self.use_csv_mode else ""
-                            writer.writerow([fname, va, grader_initial, self.grades[fname], note])
+                            # Get note from persistent storage
+                            notes = self.notes.get(fname, "")
+                            writer.writerow([fname, va, grader_initial, self.grades[fname], notes])
 
             count = len(self.grades)
             self._set_status(f"Saved {count} grade(s) → {save_path}")
