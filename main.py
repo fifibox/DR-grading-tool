@@ -37,6 +37,7 @@ class DRGrader(tk.Tk):
         # State
         self.image_folder  = None
         self.image_files   = []
+        self.image_file_paths = {}  # Map basename to relative path in subdirectory
         self.current_index = -1
         self.grades        = {}
         self.grader_initials = {}
@@ -295,17 +296,40 @@ class DRGrader(tk.Tk):
     # ------------------------------------------------------------------ #
     #  Folder loading                                                      #
     # ------------------------------------------------------------------ #
+    def _get_all_image_files_recursive(self, folder):
+        """
+        Recursively traverse all subdirectories and collect image files by basename only.
+        Returns a sorted list of unique basenames (e.g., ["image1.jpg", "image2.png"]).
+        Creates internal mapping (basename -> relative path) for file lookup.
+        If the same basename exists in multiple subfolders, only the first found is kept.
+        """
+        image_files = []
+        seen_basenames = set()
+        self.image_file_paths = {}  # Reset mapping
+        
+        for root, dirs, files in os.walk(folder):
+            for fname in files:
+                if Path(fname).suffix.lower() in SUPPORTED_EXTS:
+                    if fname not in seen_basenames:
+                        # Store only basename
+                        image_files.append(fname)
+                        seen_basenames.add(fname)
+                        # Store relative path in mapping for later file access
+                        full_path = os.path.join(root, fname)
+                        relative_path = os.path.relpath(full_path, folder)
+                        self.image_file_paths[fname] = relative_path
+        
+        return sorted(image_files)
+
     def _open_folder(self):
         folder = filedialog.askdirectory(title="Select Image Folder")
         if not folder:
             return
         self.image_folder = folder
-        self.image_files = sorted([
-            f for f in os.listdir(folder)
-            if Path(f).suffix.lower() in SUPPORTED_EXTS
-        ])
+        # Use recursive function to get images from all subdirectories
+        self.image_files = self._get_all_image_files_recursive(folder)
         if not self.image_files:
-            messagebox.showwarning("No Images", "No supported images found in that folder.")
+            messagebox.showwarning("No Images", "No supported images found in that folder or its subdirectories.", parent=self)
             return
 
         if not self.use_load_existing_excel_mode:
@@ -347,7 +371,7 @@ class DRGrader(tk.Tk):
             else:
                 self._open_csv_file(xlsx_file)
         except Exception as ex:
-            messagebox.showerror("File Load Error", str(ex))
+            messagebox.showerror("File Load Error", str(ex), parent=self)
 
     def _open_xlsx(self, xlsx_file):
         self.csv_data = {}
@@ -358,7 +382,7 @@ class DRGrader(tk.Tk):
 
         rows = list(ws.iter_rows(values_only=True))
         if not rows or len(rows[0]) < 2:
-            messagebox.showerror("Invalid Excel", "Excel must have at least 2 columns")
+            messagebox.showerror("Invalid Excel", "Excel must have at least 2 columns", parent=self)
             return
 
         for row in rows[1:]:
@@ -419,16 +443,16 @@ class DRGrader(tk.Tk):
                     ws.cell(row=row_idx, column=5).value = notes
 
                 wb.save(xlsx_file)
-                messagebox.showinfo("Excel Updated", f"Added {len(missing_images)} missing image(s) to Excel")
+                messagebox.showinfo("Excel Updated", f"Added {len(missing_images)} missing image(s) to Excel", parent=self)
 
             self.image_files = sorted(self.image_files)
         else:
             # No folder loaded yet, ask user to select image folder
             if not xlsx_images:
-                messagebox.showwarning("No Images", "No image filenames found in Excel")
+                messagebox.showwarning("No Images", "No image filenames found in Excel", parent=self)
                 return
 
-            messagebox.showinfo("Select Folder", "Please select the image folder.")
+            messagebox.showinfo("Select Folder", "Please select the image folder.", parent=self)
             image_folder = filedialog.askdirectory(title="Select Image Folder")
             if not image_folder:
                 return
@@ -545,10 +569,10 @@ class DRGrader(tk.Tk):
         else:
             # No folder loaded yet, ask user to select image folder
             if not csv_images:
-                messagebox.showwarning("No Images", "No image filenames found in CSV")
+                messagebox.showwarning("No Images", "No image filenames found in CSV", parent=self)
                 return
 
-            messagebox.showinfo("Select Folder", "Please select the image folder.")
+            messagebox.showinfo("Select Folder", "Please select the image folder.", parent=self)
             image_folder = filedialog.askdirectory(title="Select Image Folder")
             if not image_folder:
                 return
@@ -606,7 +630,9 @@ class DRGrader(tk.Tk):
         self.file_listbox.see(index)
 
         filename = self.image_files[index]
-        filepath = os.path.join(self.image_folder, filename)
+        # Use the mapping to get the actual file path (handles subdirectories)
+        relative_path = self.image_file_paths.get(filename, filename)
+        filepath = os.path.join(self.image_folder, relative_path)
 
         try:
             self._pil_image = Image.open(filepath).convert("RGB")
@@ -858,11 +884,14 @@ class DRGrader(tk.Tk):
 
     def _update_center_grade_status(self, grade):
         if grade:
-            grade_info = next(g for g in DR_GRADES if g["label"] == grade)
-            self.center_grade_status.config(
-                text=f"Grade {grade}: {grade_info['Severity']}",
-                fg="#000000"
-            )
+            grade_info = next((g for g in DR_GRADES if g["label"] == grade), None)
+            if grade_info:
+                self.center_grade_status.config(
+                    text=f"Grade {grade}: {grade_info['Severity']}",
+                    fg="#000000"
+                )
+            else:
+                self.center_grade_status.config(text="Invalid grade", fg="#cf222e")
         else:
             self.center_grade_status.config(text="Not graded", fg="#000000")
 
@@ -873,7 +902,8 @@ class DRGrader(tk.Tk):
         for i, fname in enumerate(self.image_files):
             if fname in self.grades:
                 grade = self.grades[fname]
-                color = next(g["color"] for g in DR_GRADES if g["label"] == grade)
+                grade_info = next((g for g in DR_GRADES if g["label"] == grade), None)
+                color = grade_info["color"] if grade_info else FG
                 self.file_listbox.itemconfig(i, fg=color)
             else:
                 self.file_listbox.itemconfig(i, fg=FG)
@@ -922,7 +952,7 @@ class DRGrader(tk.Tk):
             else:
                 self._save_csv_format(save_path)
         except Exception as ex:
-            messagebox.showerror("Save Error", str(ex))
+            messagebox.showerror("Save Error", str(ex), parent=self)
 
     def _save_xlsx(self, xlsx_path):
         wb = Workbook()
@@ -931,34 +961,26 @@ class DRGrader(tk.Tk):
         ws.cell(row=1, column=1).value = "Filename"
         ws.cell(row=1, column=2).value = "VA"
         ws.cell(row=1, column=3).value = "Grader Initial"
-        ws.cell(row=1, column=4).value = "Diabetic Retinopathy Severity"
-        ws.cell(row=1, column=5).value = "Label"
-        ws.cell(row=1, column=6).value = "Notes"
+        ws.cell(row=1, column=4).value = "Label"
+        ws.cell(row=1, column=5).value = "Notes"
 
         for row_idx, filename in enumerate(self.image_files, start=2):
             va = self.csv_data.get(filename, {}).get("va", "")
             grader_initial = self.grader_initials.get(filename, "") if filename in self.grades else ""
             label = self.csv_data.get(filename, {}).get("label", "")
-            # Map label to severity from DR_GRADES
-            severity = ""
-            if label:
-                grade_info = next((g for g in DR_GRADES if g["label"] == label), None)
-                if grade_info:
-                    severity = grade_info["Severity"]
             # Get notes from persistent storage, fallback to csv_data
             notes = self.notes.get(filename, "") or self.csv_data.get(filename, {}).get("notes", "")
 
             ws.cell(row=row_idx, column=1).value = filename
             ws.cell(row=row_idx, column=2).value = va
             ws.cell(row=row_idx, column=3).value = grader_initial
-            ws.cell(row=row_idx, column=4).value = severity
-            ws.cell(row=row_idx, column=5).value = label
-            ws.cell(row=row_idx, column=6).value = notes
+            ws.cell(row=row_idx, column=4).value = label
+            ws.cell(row=row_idx, column=5).value = notes
 
         wb.save(xlsx_path)
         count = len([f for f in self.image_files if self.csv_data.get(f, {}).get("label")])
         self._set_status(f"Saved {count} grade(s) → {xlsx_path}")
-        messagebox.showinfo("Saved", f"Saved {count} grade(s) to:\n{xlsx_path}")
+        messagebox.showinfo("Saved", f"Saved {count} grade(s) to:\n{xlsx_path}", parent=self)
 
     def _save_csv_format(self, csv_path):
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -974,11 +996,11 @@ class DRGrader(tk.Tk):
 
         count = len([f for f in self.image_files if self.csv_data.get(f, {}).get("label")])
         self._set_status(f"Saved {count} grade(s) → {csv_path}")
-        messagebox.showinfo("Saved", f"Saved {count} grade(s) to:\n{csv_path}")
+        messagebox.showinfo("Saved", f"Saved {count} grade(s) to:\n{csv_path}", parent=self)
 
     def _save_csv_new(self):
         if not self.grades:
-            messagebox.showinfo("Nothing to Save", "No images have been graded yet.")
+            messagebox.showinfo("Nothing to Save", "No images have been graded yet.", parent=self)
             return
 
         save_path = filedialog.asksaveasfilename(
@@ -1002,17 +1024,17 @@ class DRGrader(tk.Tk):
 
                 row_idx = 2
                 for fname in self.image_files:
-                    if fname in self.grades:
-                        va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
-                        grader_initial = self.grader_initials.get(fname, "")
-                        # Get note from persistent storage
-                        notes = self.notes.get(fname, "")
-                        ws.cell(row=row_idx, column=1).value = fname
-                        ws.cell(row=row_idx, column=2).value = va
-                        ws.cell(row=row_idx, column=3).value = grader_initial
-                        ws.cell(row=row_idx, column=4).value = self.grades[fname]
-                        ws.cell(row=row_idx, column=5).value = notes
-                        row_idx += 1
+                    va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
+                    grader_initial = self.grader_initials.get(fname, "")
+                    # Get note from persistent storage
+                    notes = self.notes.get(fname, "")
+                    label = self.grades.get(fname, "")
+                    ws.cell(row=row_idx, column=1).value = fname
+                    ws.cell(row=row_idx, column=2).value = va
+                    ws.cell(row=row_idx, column=3).value = grader_initial
+                    ws.cell(row=row_idx, column=4).value = label
+                    ws.cell(row=row_idx, column=5).value = notes
+                    row_idx += 1
 
                 wb.save(save_path)
             else:
@@ -1020,16 +1042,17 @@ class DRGrader(tk.Tk):
                     writer = csv.writer(f)
                     writer.writerow(["filename", "va", "grader_initial", "label", "notes"])
                     for fname in self.image_files:
-                        if fname in self.grades:
-                            va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
-                            grader_initial = self.grader_initials.get(fname, "")
-                            # Get note from persistent storage
-                            notes = self.notes.get(fname, "")
-                            writer.writerow([fname, va, grader_initial, self.grades[fname], notes])
+                        va = self.csv_data.get(fname, {}).get("va", "") if self.use_load_existing_excel_mode else ""
+                        grader_initial = self.grader_initials.get(fname, "")
+                        # Get note from persistent storage
+                        notes = self.notes.get(fname, "")
+                        label = self.grades.get(fname, "")
+                        writer.writerow([fname, va, grader_initial, label, notes])
 
-            count = len(self.grades)
-            self._set_status(f"Saved {count} grade(s) → {save_path}")
-            messagebox.showinfo("Saved", f"Saved {count} grade(s) to:\n{save_path}")
+            count = len(self.image_files)
+            graded_count = len(self.grades)
+            self._set_status(f"Saved {graded_count} of {count} image(s) → {save_path}")
+            messagebox.showinfo("Saved", f"Saved all {count} image(s) ({graded_count} graded) to:\n{save_path}", parent=self)
         except Exception as ex:
             messagebox.showerror("Save Error", str(ex))
 
